@@ -43,6 +43,7 @@ mutable struct LanguageServerInstance
     symbol_store::Dict{Symbol,SymbolServer.ModuleStore}
     symbol_extends::Dict{SymbolServer.VarRef,Vector{SymbolServer.VarRef}}
     symbol_store_ready::Bool
+    workspacepackages::Dict{String,Document}
     # ss_task::Union{Nothing,Future}
     format_options::DocumentFormat.FormatOptions
     lint_options::StaticLint.LintOptions
@@ -75,6 +76,7 @@ mutable struct LanguageServerInstance
             deepcopy(SymbolServer.stdlibs),
             SymbolServer.collect_extended_methods(SymbolServer.stdlibs),
             false,
+            Dict{String,Document}(),
             DocumentFormat.FormatOptions(), 
             StaticLint.LintOptions(),
             Channel{Any}(Inf),
@@ -116,9 +118,31 @@ end
 
 function setdocument!(server::LanguageServerInstance, uri::URI2, doc::Document)
     server._documents[uri] = doc
+    # Add possible workspace packages
+    path = uri2filepath(uri._uri)
+    for wk_folder in server.workspaceFolders
+        if startswith(path, wk_folder) && normpath(wk_folder) == normpath(server.env_path)
+            sub_path = splitpath(path)
+            first(sub_path) == "/" && popfirst!(sub_path)
+            length(sub_path) < 3 && continue
+            fname = splitext(last(sub_path))[1]
+            if sub_path[end-1] == "src" && sub_path[end-2] == fname
+                @info "Setting $path as source of 'live' package"
+                server.workspacepackages[fname] = doc
+            end
+        end
+    end
+    return doc
 end
 
 function deletedocument!(server::LanguageServerInstance, uri::URI2)
+    # clear reference to doc from workspacepackages
+    for (n,d) in server.workspacepackages
+        if d._uri == uri._uri
+            delete!(server.workspacepackages, n)
+            break
+        end
+    end
     delete!(server._documents, uri)
 end
 

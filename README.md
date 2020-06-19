@@ -31,6 +31,7 @@ Instantiate an instance of the language server with
 
 ```julia
 using LanguageServer
+using LanguageServer.SymbolServer
 
 server = LanguageServerInstance(stdin, stdout, "/path/to/environment")
 run(server)
